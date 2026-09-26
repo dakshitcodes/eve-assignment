@@ -1,6 +1,7 @@
 from datetime import datetime
+from decimal import Decimal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class SignupRequest(BaseModel):
@@ -43,10 +44,42 @@ class CentreResponse(BaseModel):
     location: str
 
 
+class CentreCreateRequest(BaseModel):
+    centre_name: str = Field(min_length=1, max_length=100)
+    location: str = Field(min_length=1, max_length=255)
+
+
+class CentreUpdateRequest(BaseModel):
+    centre_name: str | None = Field(default=None, min_length=1, max_length=100)
+    location: str | None = Field(default=None, min_length=1, max_length=255)
+
+    @model_validator(mode="after")
+    def require_update_fields(self):
+        if self.centre_name is None and self.location is None:
+            raise ValueError("At least one centre field must be provided")
+        return self
+
+
 class CentreTestResponse(BaseModel):
     test_id: int
     test_name: str
     price: float
+
+
+class CentreTestCreateRequest(BaseModel):
+    test_name: str = Field(min_length=1, max_length=100)
+    price: Decimal = Field(ge=0)
+
+
+class CentreTestUpdateRequest(BaseModel):
+    test_name: str | None = Field(default=None, min_length=1, max_length=100)
+    price: Decimal | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def require_update_fields(self):
+        if self.test_name is None and self.price is None:
+            raise ValueError("At least one test field must be provided")
+        return self
 
 
 class PaymentRequest(BaseModel):

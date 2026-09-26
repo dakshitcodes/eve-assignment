@@ -13,18 +13,44 @@ from app.models import (
     Payment,
     WebhookEvent,
 )
+from app.security import sign_webhook_payload
 
 client = TestClient(app)
+WEBHOOK_SECRET = "test-payment-webhook-secret-at-least-32-chars"
+CENTRE_ADMIN_KEY = "test-centre-admin-key-at-least-32-characters"
+
+
+def post_webhook(payload, signature=None):
+    headers = {}
+    if signature is None:
+        headers["X-Webhook-Signature"] = sign_webhook_payload(
+            payload,
+            WEBHOOK_SECRET,
+        )
+    else:
+        headers["X-Webhook-Signature"] = signature
+
+    return client.post(
+        "/payments/webhook/",
+        headers=headers,
+        json=payload,
+    )
+
+
+def admin_headers():
+    return {"X-Admin-Key": CENTRE_ADMIN_KEY}
 
 
 @pytest.fixture(autouse=True)
-def clean_database():
+def clean_database(monkeypatch):
     """
     Clean the database before every test.
 
     This makes every test independent from the others.
     """
 
+    monkeypatch.setenv("PAYMENT_WEBHOOK_SECRET", WEBHOOK_SECRET)
+    monkeypatch.setenv("CENTRE_ADMIN_API_KEY", CENTRE_ADMIN_KEY)
     db = SessionLocal()
 
     try:
@@ -315,6 +341,72 @@ def test_get_centre_with_no_matching_tests():
     assert response.json() == []
 
 
+def test_centre_management_requires_admin_key():
+    response = client.post(
+        "/centres/",
+        json={"centre_name": "Managed Centre", "location": "Delhi"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_admin_can_manage_centre_and_offered_tests():
+    headers = admin_headers()
+    centre_response = client.post(
+        "/centres/",
+        headers=headers,
+        json={"centre_name": "Managed Centre", "location": "Delhi"},
+    )
+
+    assert centre_response.status_code == 201
+    centre = centre_response.json()
+    centre_id = centre["centre_id"]
+
+    update_response = client.patch(
+        f"/centres/{centre_id}",
+        headers=headers,
+        json={"location": "Noida"},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["location"] == "Noida"
+
+    test_response = client.post(
+        f"/centres/{centre_id}/tests",
+        headers=headers,
+        json={"test_name": "Managed MRI", "price": 1200},
+    )
+    assert test_response.status_code == 201
+    centre_test = test_response.json()
+    test_id = centre_test["test_id"]
+
+    offer_update_response = client.patch(
+        f"/centres/{centre_id}/tests/{test_id}",
+        headers=headers,
+        json={"price": 1350, "test_name": "MRI Scan"},
+    )
+    assert offer_update_response.status_code == 200
+    assert offer_update_response.json()["price"] == 1350
+    assert offer_update_response.json()["test_name"] == "MRI Scan"
+
+    offers_response = client.get(f"/centres/{centre_id}/tests")
+    assert offers_response.status_code == 200
+    assert offers_response.json() == [
+        {"test_id": test_id, "test_name": "MRI Scan", "price": 1350}
+    ]
+
+    delete_offer_response = client.delete(
+        f"/centres/{centre_id}/tests/{test_id}",
+        headers=headers,
+    )
+    assert delete_offer_response.status_code == 204
+
+    delete_centre_response = client.delete(
+        f"/centres/{centre_id}",
+        headers=headers,
+    )
+    assert delete_centre_response.status_code == 204
+
+
 # ============================================================
 # BOOKING TESTS
 # ============================================================
@@ -453,6 +545,46 @@ def test_failed_payment():
     assert data["amount"] == 1500
 
 
+def test_failed_payment_can_be_retried():
+    booking, headers = create_booking_for_test()
+
+    failed_response = client.post(
+        "/payments/",
+        headers=headers,
+        json={
+            "booking_id": booking["booking_id"],
+            "payment_status": "FAILED",
+        },
+    )
+    assert failed_response.status_code == 200
+    assert failed_response.json()["booking_status"] == "FAILED"
+
+    retry_response = client.post(
+        "/payments/",
+        headers=headers,
+        json={
+            "booking_id": booking["booking_id"],
+            "payment_status": "SUCCESS",
+        },
+    )
+    assert retry_response.status_code == 200
+    assert retry_response.json()["payment_status"] == "SUCCESS"
+    assert retry_response.json()["booking_status"] == "CONFIRMED"
+    assert retry_response.json()["payment_id"] != failed_response.json()["payment_id"]
+
+    db = SessionLocal()
+    try:
+        payments = (
+            db.query(Payment)
+            .filter(Payment.booking_id == booking["booking_id"])
+            .order_by(Payment.payment_id)
+            .all()
+        )
+        assert [payment.status for payment in payments] == ["FAILED", "SUCCESS"]
+    finally:
+        db.close()
+
+
 def test_invalid_payment_status():
     booking, headers = create_booking_for_test()
 
@@ -583,9 +715,8 @@ def create_payment_for_webhook():
 def test_webhook_success():
     booking_id, payment_id = create_payment_for_webhook()
 
-    response = client.post(
-        "/payments/webhook/",
-        json={
+    response = post_webhook(
+        {
             "event_id": "evt_test_001",
             "payment_id": payment_id,
             "event_type": "PAYMENT_STATUS_UPDATED",
@@ -599,9 +730,8 @@ def test_webhook_success():
 
 
 def test_webhook_invalid_payment():
-    response = client.post(
-        "/payments/webhook/",
-        json={
+    response = post_webhook(
+        {
             "event_id": "evt_test_002",
             "payment_id": 9999,
             "event_type": "PAYMENT_STATUS_UPDATED",
@@ -617,9 +747,8 @@ def test_webhook_invalid_payment():
 def test_webhook_invalid_status():
     booking_id, payment_id = create_payment_for_webhook()
 
-    response = client.post(
-        "/payments/webhook/",
-        json={
+    response = post_webhook(
+        {
             "event_id": "evt_test_003",
             "payment_id": payment_id,
             "event_type": "PAYMENT_STATUS_UPDATED",
@@ -635,9 +764,8 @@ def test_webhook_invalid_status():
 def test_webhook_updates_payment_and_booking():
     booking_id, payment_id = create_payment_for_webhook()
 
-    response = client.post(
-        "/payments/webhook/",
-        json={
+    response = post_webhook(
+        {
             "event_id": "evt_test_004",
             "payment_id": payment_id,
             "event_type": "PAYMENT_STATUS_UPDATED",
@@ -679,10 +807,7 @@ def test_webhook_is_idempotent():
         "payment_status": "SUCCESS",
     }
 
-    first_response = client.post(
-        "/payments/webhook/",
-        json=webhook_data
-    )
+    first_response = post_webhook(webhook_data)
 
     assert first_response.status_code == 200
 
@@ -691,10 +816,7 @@ def test_webhook_is_idempotent():
         == "Webhook processed"
     )
 
-    second_response = client.post(
-        "/payments/webhook/",
-        json=webhook_data
-    )
+    second_response = post_webhook(webhook_data)
 
     assert second_response.status_code == 200
 
@@ -724,9 +846,8 @@ def test_webhook_is_idempotent():
 def test_different_webhook_events_can_be_processed():
     booking_id, payment_id = create_payment_for_webhook()
 
-    first_response = client.post(
-        "/payments/webhook/",
-        json={
+    first_response = post_webhook(
+        {
             "event_id": "evt_test_005",
             "payment_id": payment_id,
             "event_type": "PAYMENT_STATUS_UPDATED",
@@ -739,9 +860,8 @@ def test_different_webhook_events_can_be_processed():
     # the payment is now CONFIRMED through the first webhook
     # this second event has a different event_id, so it is not
     # considered a duplicate.
-    second_response = client.post(
-        "/payments/webhook/",
-        json={
+    second_response = post_webhook(
+        {
             "event_id": "evt_test_006",
             "payment_id": payment_id,
             "event_type": "PAYMENT_STATUS_UPDATED",
@@ -759,9 +879,8 @@ def test_different_webhook_events_can_be_processed():
 def test_webhook_invalid_event_type():
     booking_id, payment_id = create_payment_for_webhook()
 
-    response = client.post(
-        "/payments/webhook/",
-        json={
+    response = post_webhook(
+        {
             "event_id": "evt_invalid_type",
             "payment_id": payment_id,
             "event_type": "UNKNOWN_EVENT",
@@ -777,9 +896,8 @@ def test_webhook_invalid_event_type():
 
 
 def test_webhook_nonexistent_payment():
-    response = client.post(
-        "/payments/webhook/",
-        json={
+    response = post_webhook(
+        {
             "event_id": "evt_missing_payment",
             "payment_id": 99999,
             "event_type": "PAYMENT_STATUS_UPDATED",
@@ -789,3 +907,46 @@ def test_webhook_nonexistent_payment():
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Payment not found"
+
+
+def test_webhook_rejects_missing_signature():
+    response = client.post(
+        "/payments/webhook/",
+        json={
+            "event_id": "evt_unsigned",
+            "payment_id": 1,
+            "event_type": "PAYMENT_STATUS_UPDATED",
+            "payment_status": "SUCCESS",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_webhook_rejects_invalid_signature():
+    response = post_webhook(
+        {
+            "event_id": "evt_bad_signature",
+            "payment_id": 1,
+            "event_type": "PAYMENT_STATUS_UPDATED",
+            "payment_status": "SUCCESS",
+        },
+        signature="sha256=invalid",
+    )
+
+    assert response.status_code == 401
+
+
+def test_webhook_fails_closed_without_secret(monkeypatch):
+    monkeypatch.delenv("PAYMENT_WEBHOOK_SECRET")
+    response = client.post(
+        "/payments/webhook/",
+        json={
+            "event_id": "evt_unconfigured",
+            "payment_id": 1,
+            "event_type": "PAYMENT_STATUS_UPDATED",
+            "payment_status": "SUCCESS",
+        },
+    )
+
+    assert response.status_code == 503

@@ -1,6 +1,9 @@
+import hmac
+import os
+
 import jwt
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -10,6 +13,23 @@ from app.security import ALGORITHM, SECRET_KEY
 
 
 security = HTTPBearer()
+
+
+def require_centre_admin(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+) -> None:
+    expected_key = os.getenv("CENTRE_ADMIN_API_KEY")
+    if not expected_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Centre management is not configured",
+        )
+
+    if not x_admin_key or not hmac.compare_digest(x_admin_key, expected_key):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid admin credentials",
+        )
 
 
 def get_current_user(

@@ -1,12 +1,14 @@
+import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Booking, Payment, WebhookEvent
 from app.schemas import WebhookRequest, WebhookResponse
+from app.security import verify_webhook_signature
 
 
 router = APIRouter(
@@ -22,7 +24,25 @@ router = APIRouter(
 def payment_webhook(
     webhook_data: WebhookRequest,
     db: Session = Depends(get_db),
+    signature: str | None = Header(default=None, alias="X-Webhook-Signature"),
 ):
+    webhook_secret = os.getenv("PAYMENT_WEBHOOK_SECRET")
+    if not webhook_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Payment webhook is not configured",
+        )
+
+    if not signature or not verify_webhook_signature(
+        webhook_data.model_dump(),
+        webhook_secret,
+        signature,
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid webhook signature",
+        )
+
     # 1. validate webhook event type
     if webhook_data.event_type != "PAYMENT_STATUS_UPDATED":
         raise HTTPException(

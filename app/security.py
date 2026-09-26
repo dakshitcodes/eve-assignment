@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import json
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -31,6 +34,29 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, hashed_password: str) -> bool:
     return password_hash.verify(password, hashed_password)
+
+
+def sign_webhook_payload(payload: dict, secret: str) -> str:
+    canonical_payload = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        canonical_payload,
+        hashlib.sha256,
+    ).hexdigest()
+    return f"sha256={digest}"
+
+
+def verify_webhook_signature(
+    payload: dict,
+    secret: str,
+    signature: str,
+) -> bool:
+    expected_signature = sign_webhook_payload(payload, secret)
+    return hmac.compare_digest(expected_signature, signature)
 
 
 def create_access_token(data: dict) -> str:

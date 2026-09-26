@@ -26,6 +26,7 @@ def create_payment(
             Booking.booking_id == payment_data.booking_id,
             Booking.user_id == current_user.user_id
         )
+        .with_for_update()
         .first()
     )
 
@@ -34,7 +35,19 @@ def create_payment(
             status_code=404,
             detail="Booking not found"
         )
-    if booking.status != "PENDING":
+    if booking.status == "FAILED":
+        latest_payment = (
+            db.query(Payment)
+            .filter(Payment.booking_id == booking.booking_id)
+            .order_by(Payment.payment_id.desc())
+            .first()
+        )
+        if not latest_payment or latest_payment.status != "FAILED":
+            raise HTTPException(
+                status_code=400,
+                detail="Payment cannot be processed for this booking",
+            )
+    elif booking.status != "PENDING":
         raise HTTPException(
             status_code=400,
             detail="Payment cannot be processed for this booking"

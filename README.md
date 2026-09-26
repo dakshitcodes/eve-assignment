@@ -351,6 +351,28 @@ GET /centres/1/tests
 ]
 ```
 
+## Centre and Test Management
+
+Write operations require the `X-Admin-Key` header, matched against `CENTRE_ADMIN_API_KEY` in
+the server environment. Keep this key private; user JWTs do not grant administrative access.
+
+* `POST /centres/` creates a centre with `centre_name` and `location`.
+* `PATCH /centres/{centre_id}` updates either centre field.
+* `DELETE /centres/{centre_id}` removes a centre that has no bookings.
+* `POST /centres/{centre_id}/tests` creates or attaches a test and its centre-specific `price`.
+* `PATCH /centres/{centre_id}/tests/{test_id}` updates the offered price and/or test name.
+* `DELETE /centres/{centre_id}/tests/{test_id}` removes the test offering without deleting the test.
+
+For example, create an offering with:
+
+```http
+POST /centres/1/tests
+X-Admin-Key: <CENTRE_ADMIN_API_KEY>
+Content-Type: application/json
+
+{"test_name": "MRI", "price": 1200}
+```
+
 ---
 
 # Booking System
@@ -558,12 +580,12 @@ The implementation handles cases including:
 * Non-existent booking IDs
 * Payments made for another user's booking
 * Invalid payment statuses
-* Attempts to process an already processed booking
+* Attempts to charge an already confirmed booking
 * Failed payment attempts
 
-A payment can only be processed when the associated booking is in an appropriate state for payment processing.
-
-Multiple payment attempts can exist for a booking, allowing a failed attempt to be followed by another attempt.
+A payment can be processed for a pending booking. If the latest attempt failed, the user can retry;
+once an attempt succeeds, the confirmed booking cannot be charged again. Each attempt is stored as
+a separate payment record.
 
 ---
 
@@ -572,6 +594,11 @@ Multiple payment attempts can exist for a booking, allowing a failed attempt to 
 ## `POST /payments/webhook/`
 
 The webhook endpoint simulates a payment provider sending payment-status updates to the backend.
+Requests must include an `X-Webhook-Signature` header containing `sha256=` followed by the
+hexadecimal HMAC-SHA256 signature of the canonical JSON payload. Canonicalize by sorting object
+keys, using compact separators (`,` and `:`), and encoding as UTF-8 before signing. The signing key
+is `PAYMENT_WEBHOOK_SECRET`; webhook requests are rejected if the secret is not configured or the
+signature does not match.
 
 ### Request
 
@@ -827,7 +854,8 @@ SUCCESS
 FAILED
 ```
 
-Multiple payment attempts can be associated with a booking.
+Multiple payment attempts can be associated with a booking. A failed attempt may be retried, while a
+successful attempt leaves the booking confirmed and prevents further payment processing.
 
 ---
 
@@ -1192,7 +1220,7 @@ The following assumptions were made during implementation:
 
 5. Webhook `event_id` values are unique.
 
-6. A booking can have multiple payment attempts.
+6. A failed payment may be retried; a confirmed booking cannot be charged again.
 
 7. Payment attempts are represented separately from bookings.
 
@@ -1236,7 +1264,7 @@ If more development time were available, the following improvements could be con
 * Pagination
 * Appointment slot management
 * Real payment gateway integration
-* Webhook signature verification
+* Webhook secret rotation and key management
 * Structured logging
 * Monitoring and metrics
 * More comprehensive integration tests
