@@ -1257,29 +1257,6 @@ The assignment specifically emphasizes invalid requests, repeated webhook events
 
 ---
 
-# Future Improvements
-
-If more development time were available, the following improvements could be considered:
-
-* Redis caching
-* Redis-based rate limiting
-* Celery/background jobs
-* Docker and Docker Compose
-* Pagination
-* Appointment slot management
-* Real payment gateway integration
-* Webhook secret rotation and key management
-* Structured logging
-* Monitoring and metrics
-* More comprehensive integration tests
-* Dedicated test database
-* External-service retry handling
-* More granular payment state transitions
-
-These correspond to several of the optional engineering areas suggested by the assignment, including Redis, Celery, Docker, Swagger/OpenAPI, testing, structured logging, pagination, rate limiting, and webhook retry handling.
-
----
-
 # Complete Local Workflow
 
 ```bash
@@ -1319,48 +1296,3 @@ http://127.0.0.1:8000/docs
 ```
 
 The OpenAPI schema can also be accessed through FastAPI's generated documentation endpoints.
-
----
-
-# Submission Checklist
-
-Before submitting the repository, verify that it contains:
-
-```text
-README.md
-requirements.txt
-Source code
-Tests
-Alembic migrations
-.env.example
-.gitignore
-```
-
-If Docker is used, also include:
-
-```text
-Dockerfile
-docker-compose.yml
-```
-
-The assignment submission requirements explicitly call for the README, dependency file, source code, and tests, with Docker files required when Docker is used.
-
----
-
-# Conclusion
-
-This project implements a backend service for diagnostic test bookings and simulated payments with a focus on:
-
-* Clean REST APIs
-* JWT authentication
-* Secure password storage
-* Relational database design
-* Booking lifecycle management
-* Simulated payments
-* Idempotent payment webhooks
-* Transactional consistency
-* Concurrent webhook protection
-* Authorization
-* Validation
-* Automated testing
-* Database migrations
