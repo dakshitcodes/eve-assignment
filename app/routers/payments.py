@@ -47,7 +47,7 @@ def create_payment(
                 status_code=400,
                 detail="Payment cannot be processed for this booking",
             )
-    elif booking.status != "PENDING":
+    elif booking.status not in {"PENDING", "FAILED"}:
         raise HTTPException(
             status_code=400,
             detail="Payment cannot be processed for this booking"
