@@ -153,8 +153,10 @@ CREATE DATABASE eve_healthcare;
 Create a `.env` file in the project root.
 
 ```env
-DATABASE_URL=postgresql+psycopg://postgres:your_password@localhost:5432/eve_healthcare
+DATABASE_URL=postgresql+psycopg://postgres:YOUR_PASSWORD@localhost:5432/eve_healthcare
 SECRET_KEY=your_long_random_secret_key
+CENTRE_ADMIN_API_KEY=your_long_random_secret_key
+PAYMENT_WEBHOOK_SECRET=your_long_random_secret_key
 ```
 
 The `SECRET_KEY` should be a long random value and should not be committed to the repository.
@@ -969,6 +971,8 @@ Example:
 ```env
 DATABASE_URL=...
 SECRET_KEY=...
+CENTRE_ADMIN_API_KEY=...
+PAYMENT_WEBHOOK_SECRET=...
 ```
 
 The actual `.env` file should not be committed to Git.
