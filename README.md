@@ -1,6 +1,6 @@
-# EVE Healthcare Backend API
+# Healthcentre Backend API
 
-Backend service for diagnostic test bookings and simulated payments, developed as part of the EVE Healthcare SDE Intern Backend Engineering Assignment.
+Backend service for diagnostic test bookings and simulated payments.
 
 The application provides authenticated users with the ability to browse diagnostic centres and tests, create diagnostic test bookings, make simulated payments, and process payment-provider webhooks.
 
@@ -49,7 +49,7 @@ The implementation focuses on clean API design, relational database modelling, v
 # Project Structure
 
 ```text
-eve-health-assignment/
+health-centre-api/
 │
 ├── app/
 │   ├── __init__.py
@@ -101,7 +101,7 @@ Make sure the following are installed:
 
 ```bash
 git clone <your-github-repository-url>
-cd eve-health-assignment
+cd health-centre-api
 ```
 
 ---
@@ -1262,7 +1262,7 @@ The assignment specifically emphasizes invalid requests, repeated webhook events
 ```bash
 # Clone repository
 git clone <your-github-repository-url>
-cd eve-health-assignment
+cd health-centre-api
 
 # Create virtual environment
 python -m venv venv
